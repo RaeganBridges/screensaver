@@ -1,6 +1,6 @@
 # Local, Software — macOS Screensaver
 
-A native macOS screensaver that shows an animated gradient with **Local, Software** set in ABC Diatype Mono across the top. The visuals live in an HTML/CSS file; a small native bundle (`.saver`) hosts it inside a `WKWebView` so macOS treats it as a real screensaver.
+A native macOS screensaver that renders a rippling blue-water surface: a smooth multi-stop gradient distorted by layered sine waves, with procedurally spawned raindrop rings expanding across the puddle and a cursor-driven drag wake that glints where you move the pointer. The visuals live in a single HTML file (WebGL fragment shader + a thin JS driver); a small native bundle (`.saver`) hosts it inside a `WKWebView` so macOS treats it as a real screensaver.
 
 ## What's in this repo
 
@@ -133,8 +133,18 @@ You're likely on a very old macOS. Edit `MIN_MACOS` in `macos/build.sh` to match
 1. Creates a `WKWebView` sized to the screensaver's bounds.
 2. Calls `loadFileURL(_:allowingReadAccessTo:)` on the bundled `screensaver.html`, granting the web view read access to the whole `Resources/` directory so it can resolve the CSS and fonts.
 
-The gradient animation is pure CSS keyframes, so `animateOneFrame()` is a no-op — the browser engine handles timing for us. `Info.plist` declares `CFBundlePackageType=BNDL` and `NSPrincipalClass=LocalSoftwareView`, which is all macOS's screensaver loader looks for.
+Everything visual is drawn by a single WebGL fragment shader inside `screensaver.html`. One full-screen triangle is rendered per frame; the shader composes:
+
+- a 5-stop blue-water palette (abyss → deep ocean → mid → shallow → foam),
+- layered sine waves for the ambient ripple height field,
+- a ring-buffer of **raindrop** impacts (random position + birth time) that each emit an expanding shell of ring-shaped waves,
+- a ring-buffer of recent **cursor positions** that carve a continuous dragged-groove + wake ring when you move the pointer,
+- a fake specular term from screen-space derivatives of the combined height field, with a bluer tint under the drag.
+
+Because all animation is driven on the GPU by a `requestAnimationFrame` loop inside the web view, `animateOneFrame()` in Swift stays a no-op. `Info.plist` declares `CFBundlePackageType=BNDL` and `NSPrincipalClass=LocalSoftwareView`, which is all macOS's screensaver loader looks for.
+
+> Note: cursor interaction is only visible when the HTML runs in a context that accepts mouse input (e.g. opened directly in a browser, or the System Settings preview). When the saver is actually active as the system screensaver, macOS dismisses the saver as soon as the mouse moves, so the drag effect is primarily a design-time nicety.
 
 ## A note on the fonts
 
-The bundled `-Trial` weights of ABC Diatype Mono are for evaluation only. Swap in a licensed copy before distributing this beyond your own machine.
+The ABC Diatype Mono `-Trial` weights are still bundled for evaluation only — the `@font-face` rules live in `assets/styles/screensaver.css` and the original `.title` markup is commented out in `screensaver.html`. Uncomment it if you want text on top of the water. Swap in a licensed copy before distributing this beyond your own machine.
