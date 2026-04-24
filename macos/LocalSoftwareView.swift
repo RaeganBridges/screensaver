@@ -39,7 +39,7 @@ public final class LocalSoftwareView: ScreenSaverView {
 
     private func loadScreensaver() {
         let bundle = Bundle(for: type(of: self))
-        guard let htmlURL = bundle.url(forResource: "screensaver", withExtension: "html") else {
+        guard let htmlURL = bundle.url(forResource: "index", withExtension: "html") else {
             return
         }
         let resourceRoot = htmlURL.deletingLastPathComponent()

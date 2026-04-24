@@ -5,7 +5,7 @@ A native macOS screensaver that renders a rippling blue-water surface: a smooth 
 ## What's in this repo
 
 ```
-screensaver.html                        ← markup
+index.html                        ← markup
 assets/
   styles/screensaver.css                ← all styles + @font-face rules
   fonts/ABC Diatype Mono/*.woff2        ← bundled fonts
@@ -75,7 +75,7 @@ To preview immediately: hover the thumbnail in the Screen Saver pane and click *
 
 ## Updating
 
-When you change `screensaver.html` or `assets/styles/screensaver.css`, rebuild and reinstall:
+When you change `index.html` or `assets/styles/screensaver.css`, rebuild and reinstall:
 
 ```bash
 ./macos/build.sh install
@@ -85,10 +85,10 @@ Then toggle to a different screensaver and back to **Local, Software** (or log o
 
 ## Previewing in a browser
 
-You can open `screensaver.html` directly in a web browser to iterate on the design without rebuilding:
+You can open `index.html` directly in a web browser to iterate on the design without rebuilding:
 
 ```bash
-open screensaver.html
+open index.html
 ```
 
 Press **F** (or use the browser's full-screen) for a proper fullscreen preview. The HTML and the screensaver use the exact same file, so anything that looks right in the browser will look right in the screensaver.
@@ -118,7 +118,7 @@ Rebuild once — you may be running an older bundle. Also confirm the `.saver` c
 ls "$HOME/Library/Screen Savers/LocalSoftware.saver/Contents/Resources"
 ```
 
-You should see `screensaver.html` and an `assets/` directory.
+You should see `index.html` and an `assets/` directory.
 
 **`xcrun: error: invalid active developer path`**
 Command Line Tools aren't installed. Run `xcode-select --install`.
@@ -131,9 +131,9 @@ You're likely on a very old macOS. Edit `MIN_MACOS` in `macos/build.sh` to match
 `LocalSoftwareView.swift` is a subclass of `ScreenSaverView` (Apple's official base class for screensavers). On init it:
 
 1. Creates a `WKWebView` sized to the screensaver's bounds.
-2. Calls `loadFileURL(_:allowingReadAccessTo:)` on the bundled `screensaver.html`, granting the web view read access to the whole `Resources/` directory so it can resolve the CSS and fonts.
+2. Calls `loadFileURL(_:allowingReadAccessTo:)` on the bundled `index.html`, granting the web view read access to the whole `Resources/` directory so it can resolve the CSS and fonts.
 
-Everything visual is drawn by a single WebGL fragment shader inside `screensaver.html`. One full-screen triangle is rendered per frame; the shader composes:
+Everything visual is drawn by a single WebGL fragment shader inside `index.html`. One full-screen triangle is rendered per frame; the shader composes:
 
 - a 5-stop blue-water palette (abyss → deep ocean → mid → shallow → foam),
 - layered sine waves for the ambient ripple height field,
@@ -147,4 +147,4 @@ Because all animation is driven on the GPU by a `requestAnimationFrame` loop ins
 
 ## A note on the fonts
 
-The ABC Diatype Mono `-Trial` weights are still bundled for evaluation only — the `@font-face` rules live in `assets/styles/screensaver.css` and the original `.title` markup is commented out in `screensaver.html`. Uncomment it if you want text on top of the water. Swap in a licensed copy before distributing this beyond your own machine.
+The ABC Diatype Mono `-Trial` weights are still bundled for evaluation only — the `@font-face` rules live in `assets/styles/screensaver.css` and the original `.title` markup is commented out in `index.html`. Uncomment it if you want text on top of the water. Swap in a licensed copy before distributing this beyond your own machine.

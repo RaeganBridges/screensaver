@@ -19,7 +19,7 @@ OBJ_DIR="${BUILD_DIR}/obj"
 SWIFT_SRC="${SCRIPT_DIR}/LocalSoftwareView.swift"
 INFO_PLIST="${SCRIPT_DIR}/Info.plist"
 
-HTML_SRC="${ROOT_DIR}/screensaver.html"
+HTML_SRC="${ROOT_DIR}/index.html"
 ASSETS_SRC="${ROOT_DIR}/assets"
 
 MIN_MACOS="11.0"
@@ -59,7 +59,7 @@ echo "→ Copying Info.plist"
 cp "${INFO_PLIST}" "${OUT_BUNDLE}/Contents/Info.plist"
 
 echo "→ Copying resources"
-cp "${HTML_SRC}" "${OUT_BUNDLE}/Contents/Resources/screensaver.html"
+cp "${HTML_SRC}" "${OUT_BUNDLE}/Contents/Resources/index.html"
 mkdir -p "${OUT_BUNDLE}/Contents/Resources/assets"
 cp -R "${ASSETS_SRC}/fonts" "${OUT_BUNDLE}/Contents/Resources/assets/"
 cp -R "${ASSETS_SRC}/styles" "${OUT_BUNDLE}/Contents/Resources/assets/"
