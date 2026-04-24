@@ -1,0 +1,159 @@
+@font-face {
+  font-family: "ABC Diatype Mono";
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  src: url("../fonts/ABC%20Diatype%20Mono/ABCDiatypeMono-Regular-Trial.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "ABC Diatype Mono";
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+  src: url("../fonts/ABC%20Diatype%20Mono/ABCDiatypeMono-Medium-Trial.woff2")
+    format("woff2");
+}
+@font-face {
+  font-family: "ABC Diatype Mono";
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  src: url("../fonts/ABC%20Diatype%20Mono/ABCDiatypeMono-Bold-Trial.woff2")
+    format("woff2");
+}
+
+:root {
+  --c1: #0a0f2c;
+  --c2: #2a1a6b;
+  --c3: #8e2de2;
+  --c4: #ff5e7e;
+  --c5: #ffb86b;
+
+  /* One full period of the stripe pattern, in pixels. The animation
+     translates by exactly this distance so the loop is seamless. */
+  --curtain-period: 640px;
+  --curtain-duration: 22s;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--c1);
+  cursor: none;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--c1);
+}
+
+/*
+ * Geometry and performance notes:
+ *
+ * - The .curtain wrapper applies the 3D perspective + rotation (static).
+ *   Its child, .curtain-inner, carries the stripe gradient and slides via
+ *   `transform: translateX(...)`, which is GPU-accelerated and does not
+ *   trigger per-frame repaints.
+ *
+ * - With transform-origin at the left edge, rotateY(θ) sends the right
+ *   edge into the distance. For the projection to cover the viewport,
+ *   we need perspective d > W * tan(θ). Smaller θ means a smaller wrapper
+ *   element suffices — critical for staying under GPU texture limits on
+ *   Retina/4K/5K displays (physical max ~16384 px).
+ *
+ * - At θ=30° and d=200vw, the wrapper only needs to be ~170vw wide; we
+ *   use 200vw × 200vh for a safety margin. On a 6K Retina display this
+ *   is ~12000 × 6800 physical px — well under the compositor limit.
+ */
+.curtain {
+  position: absolute;
+  top: -50vh;
+  left: 0;
+  width: 200vw;
+  height: 200vh;
+  transform-origin: 0% 50%;
+  transform: perspective(200vw) rotateY(30deg);
+  overflow: hidden;
+  filter: saturate(1.15) brightness(1.05);
+}
+
+.curtain-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* one extra period of width so translating leftward by -period still
+     covers the wrapper's right edge seamlessly */
+  width: calc(100% + var(--curtain-period));
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--c1) 0px,
+    var(--c2) 80px,
+    var(--c3) 180px,
+    var(--c4) 280px,
+    var(--c5) 360px,
+    var(--c4) 440px,
+    var(--c3) 540px,
+    var(--c1) var(--curtain-period)
+  );
+  animation: curtain-slide var(--curtain-duration) linear infinite;
+  will-change: transform;
+}
+
+@keyframes curtain-slide {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(-1 * var(--curtain-period)), 0, 0);
+  }
+}
+
+.grain {
+  position: fixed;
+  inset: -50%;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.title {
+  position: fixed;
+  top: 6vh;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: "ABC Diatype Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+  font-weight: 500;
+  font-size: clamp(18px, 2.2vw, 32px);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
+  user-select: none;
+}
+
+/* .title::before,
+.title::after {
+  content: "";
+  display: inline-block;
+  width: clamp(24px, 4vw, 56px);
+  height: 1px;
+  background: rgba(255, 255, 255, 0.7);
+  vertical-align: middle;
+  margin: 0 0.9em;
+  transform: translateY(-0.1em);
+} */
