@@ -29,6 +29,39 @@ You do **not** need the full Xcode app. The build uses `swiftc`, `lipo`, and `co
 
 ---
 
+## Downloadable build (for sharing)
+
+If you want a ready-to-share download (for GitHub Releases, AirDrop, etc.), build a packaged ZIP:
+
+```bash
+./macos/build.sh package
+```
+
+That creates:
+
+```text
+build/downloads/LocalSoftware-macOS.zip
+```
+
+The ZIP contains `LocalSoftware.saver` plus an `INSTALL.txt` with end-user install steps. Recipients can install by double-clicking `LocalSoftware.saver` (no Xcode tools required on their machine).
+
+### Automatic GitHub Release downloads
+
+This repo now includes a GitHub Actions workflow at `.github/workflows/release.yml`.
+
+When you push a tag like `v1.0.0`, GitHub Actions will:
+
+1. Build the screensaver.
+2. Create `build/downloads/LocalSoftware-macOS.zip`.
+3. Attach that ZIP to the GitHub Release for the tag.
+
+Example:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Install (three steps)
 
 ### 1. Clone and build
@@ -49,6 +82,12 @@ The `install` argument tells the script to:
 4. Copy it to `~/Library/Screen Savers/LocalSoftware.saver`.
 
 If you just want to build without installing, run `./macos/build.sh` (no argument). You can then double-click `build/LocalSoftware.saver` in Finder to install it the GUI way.
+
+To build + install + produce a downloadable ZIP in one run:
+
+```bash
+./macos/build.sh install package
+```
 
 ### 2. Approve it in Privacy & Security (first time only)
 

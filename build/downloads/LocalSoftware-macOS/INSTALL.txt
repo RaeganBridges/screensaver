@@ -1,0 +1,14 @@
+Local, Software macOS Screensaver
+=================================
+
+Install (no build tools needed):
+
+1. Double-click LocalSoftware.saver in Finder.
+2. Confirm install when macOS prompts.
+3. Open System Settings -> Screen Saver and select "Local, Software".
+
+If macOS blocks it (first run, expected):
+
+1. Open System Settings -> Privacy & Security.
+2. Click "Open Anyway" for LocalSoftware.
+3. Confirm with Touch ID / password.

@@ -1,0 +1,28 @@
+name: Build And Publish Screensaver
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build package
+        run: |
+          chmod +x ./macos/build.sh
+          ./macos/build.sh package
+
+      - name: Publish GitHub release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/downloads/LocalSoftware-macOS.zip
+          generate_release_notes: true

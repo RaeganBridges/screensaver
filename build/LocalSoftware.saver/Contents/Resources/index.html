@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screensaver</title>
+    <link rel="stylesheet" href="assets/styles/screensaver.css" />
+  </head>
+  <body>
+    <canvas id="stage" aria-hidden="true"></canvas>
+    <div class="grain" aria-hidden="true"></div>
+    <!-- <h1 class="title">Local,&nbsp;Software</h1> -->
+
+    <script id="vs" type="x-shader/x-vertex">
+      attribute vec2 aPos;
+      void main() {
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }
+    </script>
+
+    <script id="fs" type="x-shader/x-fragment">
+      precision highp float;
+
+      uniform float uTime;
+      uniform vec2  uRes;
+
+      // Pointer interaction uniforms.
+      //   uMouse       : current cursor position in pixel (gl_FragCoord) space.
+      //   uMouseActive : 1.0 once the user has moved the cursor, else 0.0.
+      //   uTrail[i]    : recent trail sample -- xy = pixel position, z = birth
+      //                  time in seconds. z < 0 marks an unused slot.
+      #define TRAIL_N 24
+      uniform vec2  uMouse;
+      uniform float uMouseActive;
+      uniform float uStillness; // seconds since last pointer move
+      uniform vec3  uTrail[TRAIL_N];
+
+      // Random "raindrops" that land on the puddle at random positions and
+      // emit expanding ring shells. Each slot packs
+      //   xy : drop position in pixel space
+      //   z  : birth time in seconds (< 0 means slot is unused)
+      //   w  : per-drop strength multiplier (0.6 .. 1.4) for variety
+      #define RAIN_N 16
+      uniform vec4 uRain[RAIN_N];
+
+      // Smooth 5-stop blue-water palette -- abyss -> deep -> mid -> shallow -> foam.
+      vec3 palette(float t) {
+        vec3 c1 = vec3(0.020, 0.047, 0.122); // near-black navy (deep water)
+        vec3 c2 = vec3(0.035, 0.145, 0.337); // deep ocean blue
+        vec3 c3 = vec3(0.075, 0.388, 0.635); // mid ocean
+        vec3 c4 = vec3(0.282, 0.659, 0.839); // bright sky-lit water
+        vec3 c5 = vec3(0.769, 0.945, 0.969); // pale cyan / foam highlight
+        t = clamp(t, 0.0, 1.0);
+        if (t < 0.25) return mix(c1, c2, t / 0.25);
+        if (t < 0.50) return mix(c2, c3, (t - 0.25) / 0.25);
+        if (t < 0.75) return mix(c3, c4, (t - 0.50) / 0.25);
+        return mix(c4, c5, (t - 0.75) / 0.25);
+      }
+
+      // Convert a pixel-space position to the same normalized space as `p`
+      // (short edge spans [-1, 1]).
+      vec2 toP(vec2 px) {
+        return (px - 0.5 * uRes) / min(uRes.x, uRes.y) * 2.0;
+      }
+
+      // Sum of raindrop contributions at `q`. Each raindrop is modelled as
+      // an oscillating wavefront concentrated on an expanding spherical
+      // shell of radius `speed * age`, windowed by a tight Gaussian around
+      // that radius and fading out with age. This produces the classic
+      // "rings spreading across a puddle" look.
+      float rainRipple(vec2 q) {
+        float sum = 0.0;
+        for (int i = 0; i < RAIN_N; i++) {
+          vec4 e = uRain[i];
+          float age = uTime - e.z;
+          float alive = step(0.0, e.z) * (1.0 - step(3.8, age));
+          if (alive < 0.5) continue;
+
+          vec2  pp = toP(e.xy);
+          float d  = length(q - pp);
+
+          // Shell tracks outward slowly so each ripple lingers on screen.
+          float radius = age * 0.48;
+          float shell  = exp(-(d - radius) * (d - radius) * 26.0);
+
+          // Phase oscillation inside the shell -> concentric rings.
+          float ring = sin(d * 30.0 - age * 13.0) * shell;
+
+          // Overall amplitude: fades with age, scaled by per-drop strength.
+          ring *= exp(-age * 0.65) * e.w;
+
+          sum += ring * 0.22 * alive;
+        }
+        return sum;
+      }
+
+      // Cursor-driven contribution to the height field. Sums contributions
+      // from every trail sample so dragging the cursor carves a continuous
+      // groove through the water with a ring-wake trailing behind. Each
+      // sample contributes:
+      //   - a Gaussian "dip" (negative height) that forms the drag groove
+      //     when samples overlap along the path, and
+      //   - a high-frequency trailing ring that radiates outward and fades
+      //     quickly, giving each moment of the drag its own wake.
+      // A small live bulge right under the current cursor smooths the head
+      // of the drag while the pointer is moving.
+      float mouseRipple(vec2 q) {
+        if (uMouseActive < 0.5) return 0.0;
+
+        float sum = 0.0;
+
+        // Iterate over the full trail. Dead slots (z < 0) are zeroed via
+        // `alive` rather than `continue`, to stay portable across drivers.
+        for (int i = 0; i < TRAIL_N; i++) {
+          vec3 e = uTrail[i];
+          float age = uTime - e.z;
+
+          // alive = 1 when slot is populated AND young enough to matter.
+          float alive = step(0.0, e.z) * (1.0 - step(2.0, age));
+          if (alive < 0.5) continue;
+
+          vec2  pp = toP(e.xy);
+          float d  = length(q - pp);
+
+          // Groove: a narrow Gaussian depression. Freshest samples press
+          // hardest; overlapping samples along the path merge into a line.
+          float dip = -exp(-d * d * 34.0) * exp(-age * 2.0);
+
+          // Wake ring: trails behind each sample, radius grows with age.
+          float ring = sin(d * 26.0 - age * 9.0)
+                     * exp(-d * 3.4)
+                     * exp(-age * 1.6);
+
+          sum += (dip * 0.5 + ring * 0.2) * alive;
+        }
+
+        // Soft live bulge at the current pointer -- smooths the drag head.
+        // Fades quickly once the pointer stops, so idle water is undisturbed.
+        vec2  mp = toP(uMouse);
+        float md = length(q - mp);
+        sum += -exp(-md * md * 42.0) * 0.2 * exp(-uStillness * 4.0);
+
+        return sum;
+      }
+
+      // Stack of sine waves that sum to a rippling water height field.
+      // Inputs are in a normalized space where the short edge spans ~2 units.
+      float ripple(vec2 p, float t) {
+        float w = 0.0;
+        w += sin(p.x * 3.0  + p.y * 0.8 + t * 0.45) * 0.38;
+        w += sin(p.x * 2.1  - p.y * 2.6 - t * 0.55) * 0.26;
+        w += sin(p.y * 4.7  + t * 0.35) * 0.18;
+        w += sin((p.x + p.y) * 6.1 - t * 0.70) * 0.10;
+
+        // A slow-moving radial wavefront adds a subtle "disturbance" feel.
+        vec2 c = vec2(sin(t * 0.15) * 0.6, cos(t * 0.12) * 0.4);
+        float r = length(p - c);
+        w += sin(r * 9.0 - t * 1.1) * 0.14 * exp(-r * 0.6);
+
+        return w;
+      }
+
+      void main() {
+        vec2 frag = gl_FragCoord.xy;
+        vec2 uv   = frag / uRes;
+        // Aspect-correct centered coords; short edge spans [-1, 1].
+        vec2 p    = (frag - 0.5 * uRes) / min(uRes.x, uRes.y) * 2.0;
+
+        float t = uTime;
+
+        // Warp the sampling coords with a second ripple field for refraction.
+        // The mouse contribution is added in so the cursor bends the gradient.
+        vec2 q1 = p + vec2(0.3,  0.1);
+        vec2 q2 = p - vec2(0.15, 0.25);
+        vec2 warp = vec2(
+          ripple(q1, t * 0.9)  + mouseRipple(q1) + rainRipple(q1),
+          ripple(q2, t * 1.1) + mouseRipple(q2) + rainRipple(q2)
+        ) * 0.036;
+
+        vec2 uvw = uv + warp;
+
+        // Diagonal base gradient, modulated by the ripple height.
+        float h = ripple(p * 1.4, t) + mouseRipple(p) + rainRipple(p);
+        float g = uvw.y * 0.62 + uvw.x * 0.38;
+        g += h * 0.055;
+        g += 0.015 * sin(t * 0.3); // slow hue drift
+
+        vec3 col = palette(g);
+
+        // Screen-space derivatives of the height field => fake surface normal
+        // magnitude. Steep slopes produce bright "specular" crests. Mouse
+        // ripples are included so the cursor casts bright highlights too.
+        float e  = 0.012;
+        vec2 xp = p + vec2(e, 0.0), xn = p - vec2(e, 0.0);
+        vec2 yp = p + vec2(0.0, e), yn = p - vec2(0.0, e);
+
+        // Sample the mouse ripple separately so we can measure how much of
+        // the local surface slope is coming from the cursor vs. ambient +
+        // rain. That lets us tint the specular differently under the drag.
+        float mxp = mouseRipple(xp);
+        float mxn = mouseRipple(xn);
+        float myp = mouseRipple(yp);
+        float myn = mouseRipple(yn);
+
+        float dx = (ripple(xp, t) + rainRipple(xp) + mxp)
+                 - (ripple(xn, t) + rainRipple(xn) + mxn);
+        float dy = (ripple(yp, t) + rainRipple(yp) + myp)
+                 - (ripple(yn, t) + rainRipple(yn) + myn);
+        float slope      = length(vec2(dx, dy));
+        float mouseSlope = length(vec2(mxp - mxn, myp - myn));
+
+        float spec = pow(smoothstep(0.03, 0.20, slope), 2.0);
+
+        // Ambient/rain highlights stay near-white with a slight cyan tint.
+        // Where the cursor dominates local steepness, blend toward a pale
+        // sky-blue -- lighter and more subdued than a saturated tint.
+        vec3  baseTint  = vec3(0.88, 0.97, 1.00);
+        vec3  mouseTint = vec3(0.72, 0.90, 1.00);
+        float mouseMix  = smoothstep(0.010, 0.07, mouseSlope);
+        vec3  specTint  = mix(baseTint, mouseTint, mouseMix);
+
+        col += specTint * spec * 0.22;
+
+        // Subtle deep-water darkening in troughs.
+        col *= 0.94 + 0.12 * smoothstep(-0.8, 0.8, h);
+
+        // Soft vignette keeps focus toward center.
+        float vig = smoothstep(1.55, 0.25, length(p));
+        col *= 0.82 + 0.22 * vig;
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    </script>
+
+    <script>
+      (function () {
+        "use strict";
+
+        const canvas = document.getElementById("stage");
+        const gl =
+          canvas.getContext("webgl", { antialias: false, alpha: false }) ||
+          canvas.getContext("experimental-webgl");
+
+        if (!gl) {
+          // Graceful fallback: paint a static gradient so the saver isn't black.
+          document.body.style.background =
+            "linear-gradient(135deg,#050c1f 0%,#092556 30%,#1363a2 60%,#48a8d6 85%,#c4f1f7 100%)";
+          return;
+        }
+
+        function compile(type, source) {
+          const sh = gl.createShader(type);
+          gl.shaderSource(sh, source);
+          gl.compileShader(sh);
+          if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+            console.error(gl.getShaderInfoLog(sh));
+            gl.deleteShader(sh);
+            return null;
+          }
+          return sh;
+        }
+
+        const vs = compile(
+          gl.VERTEX_SHADER,
+          document.getElementById("vs").textContent,
+        );
+        const fs = compile(
+          gl.FRAGMENT_SHADER,
+          document.getElementById("fs").textContent,
+        );
+        const prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, fs);
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          console.error(gl.getProgramInfoLog(prog));
+          return;
+        }
+
+        // Full-screen triangle (covers the viewport with a single primitive).
+        const buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          new Float32Array([-1, -1, 3, -1, -1, 3]),
+          gl.STATIC_DRAW,
+        );
+
+        const aPos = gl.getAttribLocation(prog, "aPos");
+        const uTime = gl.getUniformLocation(prog, "uTime");
+        const uRes = gl.getUniformLocation(prog, "uRes");
+        const uMouse = gl.getUniformLocation(prog, "uMouse");
+        const uMouseActive = gl.getUniformLocation(prog, "uMouseActive");
+        const uStillness = gl.getUniformLocation(prog, "uStillness");
+        // Array uniforms must be looked up with the "[0]" suffix to be
+        // portable across WebGL1 implementations.
+        const uTrail = gl.getUniformLocation(prog, "uTrail[0]");
+        const uRain = gl.getUniformLocation(prog, "uRain[0]");
+
+        gl.useProgram(prog);
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+        // Cap DPR to keep the fragment workload sane on 5K/6K panels. The
+        // ripple shader is smooth, so sub-native resolution is indistinguishable.
+        const MAX_DPR = 1.5;
+
+        function resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+          const w = Math.max(1, Math.floor(window.innerWidth * dpr));
+          const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+            gl.viewport(0, 0, w, h);
+          }
+        }
+
+        window.addEventListener("resize", resize);
+        resize();
+
+        // Pointer state, all kept in gl_FragCoord-compatible pixel space
+        // (origin at bottom-left, DPR-scaled to match the canvas).
+        //
+        //   mousePx*          : current cursor position, tracked every move.
+        //   trail             : ring buffer of recent samples as packed
+        //                       (x, y, birthTime) triples -- this is the
+        //                       data passed straight into uTrail[].
+        //   trailHead         : next write index in the ring buffer.
+        //   lastTrailPx*      : position of the most recent trail sample,
+        //                       used to gate insertion by distance so the
+        //                       samples are evenly spaced along the path.
+        //   hasMoved          : stays false until the user moves the pointer,
+        //                       keeping the idle state free of fake drags.
+        const TRAIL_N = 24;
+        const MIN_TRAIL_DIST_CSS = 3; // CSS pixels between trail samples
+
+        let mousePxX = 0,
+          mousePxY = 0;
+        let lastTrailPxX = 0,
+          lastTrailPxY = 0;
+        let trailHead = 0;
+        let hasMoved = false;
+        let lastMoveSec = 0;
+
+        const trail = new Float32Array(TRAIL_N * 3);
+        // Mark every slot unused (shader treats z < 0 as dead).
+        for (let i = 0; i < TRAIL_N; i++) trail[i * 3 + 2] = -1;
+
+        // Raindrop ring buffer: packed as (x, y, birthTime, strength) per
+        // slot, matching the shader's `uRain[RAIN_N]` vec4 array.
+        const RAIN_N = 16;
+        const rain = new Float32Array(RAIN_N * 4);
+        for (let i = 0; i < RAIN_N; i++) rain[i * 4 + 2] = -1;
+        let rainHead = 0;
+
+        const start = performance.now();
+
+        function spawnDrop() {
+          const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+          const pxX = Math.random() * window.innerWidth * dpr;
+          const pxY = Math.random() * window.innerHeight * dpr;
+          const tSec = (performance.now() - start) * 0.001;
+          // Small natural variation so not every drop looks identical.
+          const strength = 0.6 + Math.random() * 0.8;
+
+          const base = rainHead * 4;
+          rain[base] = pxX;
+          rain[base + 1] = pxY;
+          rain[base + 2] = tSec;
+          rain[base + 3] = strength;
+          rainHead = (rainHead + 1) % RAIN_N;
+
+          scheduleNextDrop();
+        }
+
+        function scheduleNextDrop() {
+          // Poisson-ish spacing: average ~1.2 s between drops for a slow,
+          // occasional patter. Drops never pile up thanks to the ring buffer.
+          const delay = 600 + Math.random() * 1200;
+          setTimeout(spawnDrop, delay);
+        }
+
+        scheduleNextDrop();
+
+        function pushTrailSample(pxX, pxY, tSec) {
+          const base = trailHead * 3;
+          trail[base] = pxX;
+          trail[base + 1] = pxY;
+          trail[base + 2] = tSec;
+          trailHead = (trailHead + 1) % TRAIL_N;
+          lastTrailPxX = pxX;
+          lastTrailPxY = pxY;
+        }
+
+        function updatePointer(e) {
+          const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+          const pxX = e.clientX * dpr;
+          // gl_FragCoord is bottom-up while clientY is top-down.
+          const pxY = (window.innerHeight - e.clientY) * dpr;
+          mousePxX = pxX;
+          mousePxY = pxY;
+
+          const tSec = (performance.now() - start) * 0.001;
+          lastMoveSec = tSec;
+          const minDistPx = MIN_TRAIL_DIST_CSS * dpr;
+          const dx = pxX - lastTrailPxX;
+          const dy = pxY - lastTrailPxY;
+
+          if (!hasMoved || dx * dx + dy * dy >= minDistPx * minDistPx) {
+            pushTrailSample(pxX, pxY, tSec);
+            hasMoved = true;
+          }
+        }
+
+        window.addEventListener("mousemove", updatePointer, { passive: true });
+        window.addEventListener(
+          "touchmove",
+          (e) => {
+            if (e.touches && e.touches.length) updatePointer(e.touches[0]);
+          },
+          { passive: true },
+        );
+
+        function frame(now) {
+          const t = (now - start) * 0.001;
+          gl.uniform1f(uTime, t);
+          gl.uniform2f(uRes, canvas.width, canvas.height);
+          gl.uniform2f(uMouse, mousePxX, mousePxY);
+          gl.uniform1f(uMouseActive, hasMoved ? 1.0 : 0.0);
+          gl.uniform1f(uStillness, hasMoved ? t - lastMoveSec : 999.0);
+          gl.uniform3fv(uTrail, trail);
+          gl.uniform4fv(uRain, rain);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      })();
+    </script>
+  </body>
+</html>

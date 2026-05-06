@@ -2,8 +2,10 @@
 # Build a macOS .saver bundle: LocalSoftware.saver
 #
 # Usage:
-#   ./macos/build.sh            # build Release .saver into ./build
-#   ./macos/build.sh install    # build, then copy into ~/Library/Screen Savers
+#   ./macos/build.sh                  # build Release .saver into ./build
+#   ./macos/build.sh install          # build, then copy into ~/Library/Screen Savers
+#   ./macos/build.sh package          # build + create downloadable zip in ./build/downloads
+#   ./macos/build.sh install package  # build, install locally, and create zip
 
 set -euo pipefail
 
@@ -15,6 +17,8 @@ BUNDLE="${NAME}.saver"
 BUILD_DIR="${ROOT_DIR}/build"
 OUT_BUNDLE="${BUILD_DIR}/${BUNDLE}"
 OBJ_DIR="${BUILD_DIR}/obj"
+DOWNLOADS_DIR="${BUILD_DIR}/downloads"
+PACKAGE_PREFIX="${NAME}-macOS"
 
 SWIFT_SRC="${SCRIPT_DIR}/LocalSoftwareView.swift"
 INFO_PLIST="${SCRIPT_DIR}/Info.plist"
@@ -23,6 +27,24 @@ HTML_SRC="${ROOT_DIR}/index.html"
 ASSETS_SRC="${ROOT_DIR}/assets"
 
 MIN_MACOS="11.0"
+
+DO_INSTALL=0
+DO_PACKAGE=0
+for arg in "$@"; do
+    case "${arg}" in
+        install)
+            DO_INSTALL=1
+            ;;
+        package)
+            DO_PACKAGE=1
+            ;;
+        *)
+            echo "Unknown argument: ${arg}"
+            echo "Usage: ./macos/build.sh [install] [package]"
+            exit 1
+            ;;
+    esac
+done
 
 echo "→ Cleaning ${OUT_BUNDLE}"
 rm -rf "${OUT_BUNDLE}" "${OBJ_DIR}"
@@ -67,16 +89,53 @@ cp -R "${ASSETS_SRC}/styles" "${OUT_BUNDLE}/Contents/Resources/assets/"
 # Drop the raw .zip from the bundled Resources to keep it lean.
 rm -f "${OUT_BUNDLE}/Contents/Resources/assets/fonts/ABC Diatype Mono.zip"
 
+# Clear Finder metadata/resource forks so codesign is deterministic.
+xattr -cr "${OUT_BUNDLE}"
+
 echo "→ Ad-hoc code signing"
 codesign --force --deep --sign - "${OUT_BUNDLE}"
 
 echo "✓ Built: ${OUT_BUNDLE}"
 
-if [[ "${1:-}" == "install" ]]; then
+if [[ "${DO_INSTALL}" -eq 1 ]]; then
     DEST="${HOME}/Library/Screen Savers"
     mkdir -p "${DEST}"
     rm -rf "${DEST}/${BUNDLE}"
     cp -R "${OUT_BUNDLE}" "${DEST}/"
     echo "✓ Installed to: ${DEST}/${BUNDLE}"
     echo "  Open System Settings → Screen Saver and pick 'Local, Software'."
+fi
+
+if [[ "${DO_PACKAGE}" -eq 1 ]]; then
+    PKG_ROOT="${DOWNLOADS_DIR}/${PACKAGE_PREFIX}"
+    PKG_ZIP="${DOWNLOADS_DIR}/${PACKAGE_PREFIX}.zip"
+    INSTALL_NOTES="${PKG_ROOT}/INSTALL.txt"
+
+    echo "→ Creating downloadable package"
+    rm -rf "${PKG_ROOT}" "${PKG_ZIP}"
+    mkdir -p "${PKG_ROOT}"
+    cp -R "${OUT_BUNDLE}" "${PKG_ROOT}/"
+
+    cat > "${INSTALL_NOTES}" <<'EOF'
+Local, Software macOS Screensaver
+=================================
+
+Install (no build tools needed):
+
+1. Double-click LocalSoftware.saver in Finder.
+2. Confirm install when macOS prompts.
+3. Open System Settings -> Screen Saver and select "Local, Software".
+
+If macOS blocks it (first run, expected):
+
+1. Open System Settings -> Privacy & Security.
+2. Click "Open Anyway" for LocalSoftware.
+3. Confirm with Touch ID / password.
+EOF
+
+    (
+        cd "${DOWNLOADS_DIR}"
+        /usr/bin/zip -qry "${PKG_ZIP}" "${PACKAGE_PREFIX}"
+    )
+    echo "✓ Download package: ${PKG_ZIP}"
 fi
