@@ -102,6 +102,9 @@ if [[ "${DO_INSTALL}" -eq 1 ]]; then
     mkdir -p "${DEST}"
     rm -rf "${DEST}/${BUNDLE}"
     cp -R "${OUT_BUNDLE}" "${DEST}/"
+    # Downloads / Finder copies can inherit com.apple.quarantine; strip so the
+    # Screen Saver engine can load the bundle (same as macos/fix-installed-saver.sh).
+    xattr -cr "${DEST}/${BUNDLE}"
     echo "✓ Installed to: ${DEST}/${BUNDLE}"
     echo "  Open System Settings → Screen Saver and pick 'Local, Software'."
 fi
@@ -122,8 +125,20 @@ Local, Software macOS Screensaver
 
 Install (no build tools needed):
 
-1. Double-click LocalSoftware.saver in Finder.
+1. Double-click LocalSoftware.saver in Finder (or drag it to ~/Library/Screen Savers).
 2. Confirm install when macOS prompts.
+
+REQUIRED if it does not appear in the Screen Saver list (browser downloads add
+"quarantine" flags that block loading). In Terminal, run:
+
+  xattr -cr "$HOME/Library/Screen Savers/LocalSoftware.saver"
+
+If you also copied to the system folder:
+
+  sudo xattr -cr "/Library/Screen Savers/LocalSoftware.saver"
+
+Then quit System Settings completely (⌘Q), reopen, and look for "Local, Software".
+
 3. Open System Settings -> Screen Saver and select "Local, Software".
 
 If macOS blocks it (first run, expected):
@@ -131,6 +146,10 @@ If macOS blocks it (first run, expected):
 1. Open System Settings -> Privacy & Security.
 2. Click "Open Anyway" for LocalSoftware.
 3. Confirm with Touch ID / password.
+
+Note: On recent macOS versions, some third-party .saver modules are flaky in
+System Settings. If nothing helps, use Preview on the thumbnail or open
+index.html in a browser (same visuals) as a fallback.
 EOF
 
     (

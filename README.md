@@ -148,7 +148,22 @@ Then restart **System Settings** if it's open.
 Expected on first launch. Follow step 2 above (Privacy & Security → Open Anyway).
 
 **The screensaver list doesn't show "Local, Software" after install.**
-Quit System Settings completely (⌘Q) and reopen it. macOS caches the list.
+
+1. Quit System Settings completely (⌘Q) and reopen it. macOS caches the list.
+
+2. **Clear quarantine** (very common if you downloaded the ZIP with Safari or Chrome). The installed `.saver` may carry `com.apple.quarantine`, which can prevent it from appearing or loading:
+
+   ```bash
+   xattr -cr "$HOME/Library/Screen Savers/LocalSoftware.saver"
+   ```
+
+   Or run the helper script from the repo:
+
+   ```bash
+   ./macos/fix-installed-saver.sh
+   ```
+
+3. On **macOS 15+ / 26+**, some users report third-party `.saver` bundles not showing in Settings even when installed correctly; that is an OS-side issue. Try **Screen Saver → Preview** after selecting another saver, or use **Open** on the `.saver` in Finder once more after clearing quarantine.
 
 **The screensaver shows a blank black screen.**
 Rebuild once — you may be running an older bundle. Also confirm the `.saver` contains resources:
