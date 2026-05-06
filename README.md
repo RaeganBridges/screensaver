@@ -166,7 +166,9 @@ Expected on first launch. Follow step 2 above (Privacy & Security → Open Anywa
 3. On **macOS 15+ / 26+**, some users report third-party `.saver` bundles not showing in Settings even when installed correctly; that is an OS-side issue. Try **Screen Saver → Preview** after selecting another saver, or use **Open** on the `.saver` in Finder once more after clearing quarantine.
 
 **The screensaver shows a blank black screen.**
-Rebuild once — you may be running an older bundle. Also confirm the `.saver` contains resources:
+On **macOS Sonoma and newer**, WebKit runs the screensaver page with `document.hidden === true`, which **throttles `requestAnimationFrame` and main-thread timers** (often to a black or frozen canvas). This project works around that by driving the draw loop from a **Web Worker timer** when the document is hidden (same class of fix as [webviewscreensaver v2.3](https://github.com/liquidx/webviewscreensaver/issues/75)); rain scheduling runs inside that loop instead of `setTimeout`.
+
+Rebuild and reinstall — you may be on an older bundle. Also confirm the `.saver` contains resources:
 
 ```bash
 ls "$HOME/Library/Screen Savers/LocalSoftware.saver/Contents/Resources"

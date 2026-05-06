@@ -356,12 +356,16 @@
 
         const start = performance.now();
 
-        function spawnDrop() {
+        // Rain timing is driven from the render loop so it still works when the
+        // page is "hidden" (macOS Sonoma+ screensaver): main-thread timers are
+        // throttled to ~1 Hz there, same as requestAnimationFrame.
+        let nextRainAt = performance.now() + 600 + Math.random() * 1200;
+
+        function spawnOneDrop() {
           const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
           const pxX = Math.random() * window.innerWidth * dpr;
           const pxY = Math.random() * window.innerHeight * dpr;
           const tSec = (performance.now() - start) * 0.001;
-          // Small natural variation so not every drop looks identical.
           const strength = 0.6 + Math.random() * 0.8;
 
           const base = rainHead * 4;
@@ -370,18 +374,7 @@
           rain[base + 2] = tSec;
           rain[base + 3] = strength;
           rainHead = (rainHead + 1) % RAIN_N;
-
-          scheduleNextDrop();
         }
-
-        function scheduleNextDrop() {
-          // Poisson-ish spacing: average ~1.2 s between drops for a slow,
-          // occasional patter. Drops never pile up thanks to the ring buffer.
-          const delay = 600 + Math.random() * 1200;
-          setTimeout(spawnDrop, delay);
-        }
-
-        scheduleNextDrop();
 
         function pushTrailSample(pxX, pxY, tSec) {
           const base = trailHead * 3;
@@ -423,6 +416,12 @@
         );
 
         function frame(now) {
+          const wall = performance.now();
+          if (wall >= nextRainAt) {
+            spawnOneDrop();
+            nextRainAt = wall + 600 + Math.random() * 1200;
+          }
+
           const t = (now - start) * 0.001;
           gl.uniform1f(uTime, t);
           gl.uniform2f(uRes, canvas.width, canvas.height);
@@ -432,9 +431,63 @@
           gl.uniform3fv(uTrail, trail);
           gl.uniform4fv(uRain, rain);
           gl.drawArrays(gl.TRIANGLES, 0, 3);
-          requestAnimationFrame(frame);
         }
-        requestAnimationFrame(frame);
+
+        let stopRenderLoop = function () {};
+
+        function startRenderLoop() {
+          stopRenderLoop();
+
+          const tick = function (ts) {
+            frame(ts !== undefined ? ts : performance.now());
+          };
+
+          // Full-screen Screen Saver on Sonoma+ reports document.hidden === true.
+          // WebKit then throttles rAF and main-thread timers (~1 Hz). Driving the
+          // loop from a Worker interval (same approach as webviewscreensaver v2.3)
+          // restores smooth animation. Browser preview keeps document visible → rAF.
+          if (document.hidden) {
+            try {
+              const workerSrc =
+                "let id=0;onmessage=function(e){if(e.data==='start'){id=setInterval(function(){postMessage('t')},1000/60)}else if(e.data==='stop'){clearInterval(id)}};";
+              const blob = new Blob([workerSrc], { type: "text/javascript" });
+              const url = URL.createObjectURL(blob);
+              const w = new Worker(url);
+              w.onmessage = function () {
+                tick(performance.now());
+              };
+              w.postMessage("start");
+              stopRenderLoop = function () {
+                w.postMessage("stop");
+                w.terminate();
+                URL.revokeObjectURL(url);
+              };
+            } catch (e) {
+              let rafId = 0;
+              function loop(ts) {
+                tick(ts);
+                rafId = requestAnimationFrame(loop);
+              }
+              rafId = requestAnimationFrame(loop);
+              stopRenderLoop = function () {
+                cancelAnimationFrame(rafId);
+              };
+            }
+          } else {
+            let rafId = 0;
+            function loop(ts) {
+              tick(ts);
+              rafId = requestAnimationFrame(loop);
+            }
+            rafId = requestAnimationFrame(loop);
+            stopRenderLoop = function () {
+              cancelAnimationFrame(rafId);
+            };
+          }
+        }
+
+        document.addEventListener("visibilitychange", startRenderLoop);
+        startRenderLoop();
       })();
     </script>
   </body>
